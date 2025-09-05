@@ -2,8 +2,8 @@ name: AI Job Agent (Hourly)
 
 on:
   schedule:
-    - cron: '0 * * * *'  # runs every hour at minute 0
-  workflow_dispatch:      # lets you trigger it manually from GitHub UI
+    - cron: '0 * * * *'        # every hour at :00
+  workflow_dispatch:            # allow manual runs
 
 jobs:
   run:
@@ -22,8 +22,10 @@ jobs:
           python -m pip install --upgrade pip
           pip install requests pandas openpyxl
 
-      - name: Prepare output folder
-        run: mkdir -p out
+      - name: Prepare output & seen file
+        run: |
+          mkdir -p out
+          touch seen.csv
 
       - name: Run agent
         env:
@@ -33,13 +35,25 @@ jobs:
         run: python job_agent_multi.py
 
       - name: Commit report (if new)
+        shell: bash
         run: |
-          if [ -n "$(git status --porcelain)" ]; then
-            git config user.name "github-actions[bot]"
-            git config user.email "github-actions[bot]@users.noreply.github.com"
-            git add out/*.xlsx seen.csv || true
+          set -e
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          ADDED=0
+          if compgen -G "out/*.xlsx" > /dev/null; then
+            git add out/*.xlsx || true
+            ADDED=1
+          fi
+          if [ -f seen.csv ]; then
+            git add seen.csv || true
+            ADDED=1
+          fi
+
+          if [ "$ADDED" -eq 1 ] && ! git diff --cached --quiet; then
             git commit -m "Report $(date -u +'%Y-%m-%d %H:%M:%S')"
             git push
           else
-            echo "No changes"
+            echo "No files to commit."
           fi
