@@ -1,9 +1,10 @@
-name: AI Job Agent (Hourly)
+name: AI Job Agent (Daily 7am CT)
 
 on:
   schedule:
-    - cron: '0 * * * *'        # every hour at :00
-  workflow_dispatch:            # allow manual runs
+    - cron: '0 12 * * *'   # 7am CT during Daylight Time (UTC-5)
+    - cron: '0 13 * * *'   # 7am CT during Standard Time (UTC-6)
+  workflow_dispatch:
 
 jobs:
   run:
@@ -13,21 +14,38 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Gate: only proceed if it's 07:00 in America/Chicago right now
+      - name: Gate at 7am America/Chicago
+        id: gate
+        shell: bash
+        run: |
+          HOUR=$(TZ=America/Chicago date +%H)
+          echo "Local hour (America/Chicago) is $HOUR"
+          if [ "$HOUR" = "07" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - uses: actions/setup-python@v5
+        if: steps.gate.outputs.run == 'true'
         with:
           python-version: '3.11'
 
       - name: Install dependencies
+        if: steps.gate.outputs.run == 'true'
         run: |
           python -m pip install --upgrade pip
           pip install requests pandas openpyxl
 
       - name: Prepare output & seen file
+        if: steps.gate.outputs.run == 'true'
         run: |
           mkdir -p out
           touch seen.csv
 
       - name: Run agent
+        if: steps.gate.outputs.run == 'true'
         env:
           INPUT_EXCEL: companies.xlsx
           OUTPUT_DIR: out
@@ -35,6 +53,7 @@ jobs:
         run: python job_agent_multi.py
 
       - name: Commit report (if new)
+        if: steps.gate.outputs.run == 'true'
         shell: bash
         run: |
           set -e
